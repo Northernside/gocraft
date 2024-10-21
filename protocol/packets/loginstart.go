@@ -13,7 +13,7 @@ func WriteLoginStart(conn net.Conn, username string) error {
 	buffer.WriteVarInt(int32(len(username)))
 	buffer.WriteString(username)
 
-	uuid := "97cedeb90f78362d9ed3ebb40182b5d5"
+	uuid := "00000000000000000000000000000000"
 	uuidBytes, err := hex.DecodeString(uuid)
 	if err != nil {
 		return err

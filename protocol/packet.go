@@ -4,10 +4,18 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"gocraft/protocol/states"
 	"io"
-	"log"
 	"net"
 )
+
+func PacketLogFormat(source, target string, packetId int32, payload []byte) {
+	fmt.Println(">>>>>>>>>>>>>>>>>>")
+	fmt.Printf("%s -> %s (%d) [%d:%s]\n", source, target, packetId, states.CurrentState, states.GetName(states.CurrentState, packetId))
+	fmt.Printf("Payload (Bytes): %s\n", fmt.Sprintf("%v", payload))
+	fmt.Println("Payload (ASCII):", string(payload))
+	fmt.Println("<<<<<<<<<<<<<<<<")
+}
 
 func SendPacket(conn net.Conn, packetID int32, payload []byte) error {
 	var buffer Buffer
@@ -17,37 +25,30 @@ func SendPacket(conn net.Conn, packetID int32, payload []byte) error {
 	buffer.WriteVarInt(packetID)
 	buffer.Write(payload)
 
-	fmt.Printf("sending packet: ID=%d, Length=%d, Payload=%s\n", packetID, packetLength, string(payload))
-
 	_, err := conn.Write(buffer.Bytes())
 	return err
 }
 
-func ReadPacket(conn net.Conn) (int32, string, error) {
+func ReadPacket(conn net.Conn) (int32, []byte, string, error) {
 	packetLength, err := ReadVarInt(conn)
 	if err != nil {
-		return 0, "", err
+		return 0, nil, "", err
 	}
-
-	log.Printf("packet length: %d\n", packetLength)
 
 	packetID, err := ReadVarInt(conn)
 	if err != nil {
-		log.Printf("packet id read error: %s\n", err)
-		return 0, "", err
+		fmt.Printf("packet id read error: %s\n", err)
+		return 0, nil, "", err
 	}
 
-	log.Printf("packet ID: %d\n", packetID)
-
-	// remaining payload
 	payload := make([]byte, int(packetLength)-VarIntSize(packetID))
 	_, err = conn.Read(payload)
 	if err != nil {
-		return 0, "", err
+		return 0, nil, "", err
 	}
 
 	decodedPayload := string(payload)
-	return packetID, decodedPayload, nil
+	return packetID, payload, decodedPayload, nil
 }
 
 func ReadVarInt(reader io.Reader) (int32, error) {
@@ -106,6 +107,18 @@ func (b *Buffer) WriteVarInt(value int32) {
 
 type Buffer struct {
 	bytes.Buffer
+}
+
+func (b *Buffer) WriteBool(v bool) {
+	if v {
+		b.WriteByte(1)
+	} else {
+		b.WriteByte(0)
+	}
+}
+
+func (b *Buffer) WriteUint8(v uint8) error {
+	return binary.Write(&b.Buffer, binary.BigEndian, v)
 }
 
 func (b *Buffer) WriteUint16(v uint16) error {

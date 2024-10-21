@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"gocraft/protocol"
 	"gocraft/protocol/packets"
-	"log"
+	"gocraft/protocol/states"
 	"net"
 )
 
@@ -24,10 +23,15 @@ func main() {
 	defer conn.Close()
 
 	done := make(chan bool)
+
+	packets.WriteHandshake(conn, serverAddr, port, protocolVersion)
+	states.CurrentState = states.Login
+	packets.WriteLoginStart(conn, "Northernside")
+
 	go func() {
 		defer close(done)
 		for {
-			packetID, payload, err := protocol.ReadPacket(conn)
+			packetId, _, _, err := protocol.ReadPacket(conn)
 			if err != nil {
 				if err.Error() == "EOF" {
 					fmt.Println("Connection closed by server")
@@ -38,41 +42,50 @@ func main() {
 				return
 			}
 
-			fmt.Println("=============== Incoming packet ===============")
-			fmt.Printf("ID: %d\n", packetID)
-			fmt.Printf("Payload: %s\n", payload)
+			switch packetId {
+			case 0x02:
+				if states.CurrentState == states.Login {
+					fmt.Println("Login completed!")
+					packets.WriteLoginAck(conn)
 
-			switch packetID {
-			case 0x03:
-				// compression packet
-				threshold, err := protocol.ReadVarInt(bytes.NewReader([]byte(payload)))
-				if err != nil {
-					fmt.Println("Failed to read threshold:", err)
-					return
+					states.CurrentState = states.Configuration
+					packets.WriteBrand(conn, "labymod")
+					packets.WriteClientSettings(conn, "en_US", 8, 0, true, 0x7F, 1, false, true)
 				}
-
-				fmt.Printf("Threshold: %d\n", threshold)
+			case 0x01:
+				if states.CurrentState == states.Configuration {
+					fmt.Println("Server sent custom payload")
+				}
+			case 0x03:
+				if states.CurrentState == states.Configuration {
+					fmt.Println("Server sent finish configuration")
+					packets.WriteFinishConfiguration(conn)
+					states.CurrentState = states.Play
+				}
+			case 0x07:
+				if states.CurrentState == states.Configuration {
+					fmt.Println("Server sent registry data")
+				}
+			case 0x0C:
+				if states.CurrentState == states.Configuration {
+					fmt.Println("Server sent update enabled features")
+				}
+			case 0x0D:
+				if states.CurrentState == states.Configuration {
+					fmt.Println("Server sent update tags")
+				}
+			case 0x0E:
+				if states.CurrentState == states.Configuration {
+					fmt.Println("Server sent select known packs")
+					packets.WriteSelectKnownPacks(conn)
+				}
+			case 0x2B:
+				if states.CurrentState == states.Play {
+					fmt.Println("Server sent login")
+				}
 			}
-
-			fmt.Println("===============================================")
 		}
 	}()
-
-	log.Println("connected")
-	err = packets.WriteHandshake(conn, serverAddr, port, protocolVersion)
-	if err != nil {
-		fmt.Println("failed to send handshake:", err)
-		return
-	}
-
-	log.Println("-> handshake")
-	err = packets.WriteLoginStart(conn, "Northernside")
-	if err != nil {
-		fmt.Println("failed to send login start:", err)
-		return
-	}
-
-	log.Println("-> login start")
 
 	<-done
 }
