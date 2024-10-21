@@ -35,20 +35,29 @@ func ReadPacket(conn net.Conn) (int32, []byte, string, error) {
 		return 0, nil, "", err
 	}
 
-	packetID, err := ReadVarInt(conn)
+	packetId, err := ReadVarInt(conn)
 	if err != nil {
 		fmt.Printf("packet id read error: %s\n", err)
 		return 0, nil, "", err
 	}
 
-	payload := make([]byte, int(packetLength)-VarIntSize(packetID))
+	if packetLength == 0 {
+		return 0, nil, "", nil
+	}
+
+	length := VarIntSize(packetId)
+	if packetLength > 0 {
+		length += int(packetLength)
+	}
+
+	payload := make([]byte, length)
 	_, err = conn.Read(payload)
 	if err != nil {
 		return 0, nil, "", err
 	}
 
 	decodedPayload := string(payload)
-	return packetID, payload, decodedPayload, nil
+	return packetId, payload, decodedPayload, nil
 }
 
 func ReadVarInt(reader io.Reader) (int32, error) {
